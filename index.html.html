@@ -1,0 +1,1394 @@
+<!DOCTYPE html>
+<!--
+  బాలల ఆదికాండము కథలు — Kids Genesis Stories
+  ------------------------------------------------------------------
+  DEVELOPER NOTES (English by design; all visible UI text is Telugu):
+
+  * This app fetches ./bible-data/01-genesis.json at runtime.
+    Because fetch() is used, opening this file directly via file://
+    will FAIL due to browser CORS restrictions on local files.
+    Run a local HTTP server instead:
+
+        python -m http.server 8000
+
+    then open http://localhost:8000
+
+  * Expected folder structure:
+        Kids-Bible-Stories/
+        ├── index.html
+        └── bible-data/
+            └── 01-genesis.json
+
+  * SCRIPTURE INTEGRITY: rawTeluguText is rendered verbatim from the
+    JSON dataset only. This app never generates, reconstructs,
+    translates or scrapes scripture. If rawTeluguText is missing,
+    a Telugu "not available" notice is shown instead.
+
+  * SECURITY: all dataset strings are inserted with textContent /
+    createElement. Nothing from the JSON reaches innerHTML, so the
+    dataset cannot inject executable HTML.
+-->
+<html lang="te">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>బాలల ఆదికాండము కథలు</title>
+<meta name="description" content="పిల్లల కోసం సులువైన ఆదికాండము కథలు">
+<meta name="theme-color" content="#FDFBF7">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Telugu:wght@400;500;600;700&family=Noto+Serif+Telugu:wght@500;600;700&display=swap" rel="stylesheet">
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  // Tailwind is used for layout utilities only; the visual character lives in
+  // the custom CSS below. Guarded so that a blocked/offline CDN degrades
+  // gracefully instead of throwing "tailwind is not defined" at page load.
+  if (typeof tailwind !== "undefined"){
+    tailwind.config = { corePlugins: { preflight: true } };
+  } else {
+    console.warn("[kids-genesis] Tailwind CDN unavailable; custom CSS still applies.");
+  }
+</script>
+
+<style>
+/* ==================================================================
+   1. DESIGN TOKENS — DAY THEME
+   ================================================================== */
+:root{
+  --bg:#FDFBF7;
+  --sky:#A9DDF5;
+  --sky-deep:#63BCE5;
+  --story-yellow:#FFD966;
+  --amber:#F6B94A;
+  --peach:#FFD5B5;
+  --mint:#BDECCB;
+  --lavender:#DDD3FF;
+  --text:#352F2A;
+  --text-2:#675F57;
+  --surface:#FFFDF8;
+
+  --card-shadow:
+      0 1px 2px rgba(53,47,42,.05),
+      0 8px 18px -8px rgba(53,47,42,.16),
+      0 22px 42px -26px rgba(53,47,42,.22);
+  --card-shadow-hi:
+      0 2px 4px rgba(53,47,42,.06),
+      0 14px 28px -10px rgba(53,47,42,.20),
+      0 34px 58px -30px rgba(53,47,42,.26);
+  --inner-hi: inset 0 1px 0 rgba(255,255,255,.9);
+  --hairline: rgba(53,47,42,.09);
+  --ring: var(--sky-deep);
+  --dock-bg: rgba(255,253,248,.82);
+  --header-bg: rgba(253,251,247,.80);
+
+  --read-max: 900px;
+  --dur: 300ms;
+  --ease: cubic-bezier(.22,.61,.36,1);
+}
+
+/* ==================================================================
+   2. NIGHT THEME
+   ================================================================== */
+[data-theme="night"]{
+  --bg:#12172A;
+  --sky:#2B3A63;
+  --sky-deep:#7FB9DF;
+  --story-yellow:#E8C46A;
+  --amber:#D8A64B;
+  --peach:#4A3A46;
+  --mint:#31513F;
+  --lavender:#332F52;
+  --text:#F3EADB;
+  --text-2:#BCB2A4;
+  --surface:#19213A;
+
+  --card-shadow:
+      0 1px 2px rgba(0,0,0,.35),
+      0 10px 22px -10px rgba(0,0,0,.55),
+      0 26px 48px -28px rgba(0,0,0,.65);
+  --card-shadow-hi:
+      0 2px 6px rgba(0,0,0,.40),
+      0 16px 32px -12px rgba(0,0,0,.60),
+      0 38px 64px -32px rgba(0,0,0,.70);
+  --inner-hi: inset 0 1px 0 rgba(255,255,255,.06);
+  --hairline: rgba(243,234,219,.12);
+  --ring:#8FC9EA;
+  --dock-bg: rgba(25,33,58,.80);
+  --header-bg: rgba(18,23,42,.82);
+}
+
+/* ==================================================================
+   3. BASE
+   ================================================================== */
+*,*::before,*::after{ box-sizing:border-box; }
+
+html{ scroll-behavior:smooth; }
+
+body{
+  margin:0;
+  background-color:var(--bg);
+  color:var(--text);
+  font-family:"Noto Sans Telugu","Noto Sans",system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+  text-rendering:optimizeLegibility;
+  overflow-x:hidden;
+  /* room for the floating mobile dock */
+  padding-bottom:calc(112px + env(safe-area-inset-bottom));
+  transition:background-color 420ms var(--ease), color 420ms var(--ease);
+}
+@media (min-width:1024px){ body{ padding-bottom:64px; } }
+
+h1,h2,h3,.font-display{ font-family:"Noto Serif Telugu","Noto Sans Telugu",serif; }
+
+/* Day: warm layered paper wash. Night: deep indigo gradient. */
+body::before{
+  content:"";
+  position:fixed; inset:0; z-index:-2;
+  pointer-events:none;
+  background:
+    radial-gradient(1100px 620px at 12% -8%,  rgba(169,221,245,.34), transparent 62%),
+    radial-gradient(900px  560px at 92% 4%,   rgba(255,213,181,.32), transparent 60%),
+    radial-gradient(1000px 680px at 50% 108%, rgba(189,236,203,.28), transparent 64%);
+  transition:opacity 420ms var(--ease);
+}
+[data-theme="night"] body::before,
+[data-theme="night"]::before{
+  background:
+    radial-gradient(1200px 700px at 15% -10%, rgba(43,58,99,.85), transparent 64%),
+    radial-gradient(1000px 620px at 88% 6%,   rgba(34,43,73,.90), transparent 60%),
+    linear-gradient(180deg,#12172A 0%,#19213A 46%,#222B49 100%);
+}
+
+/* subtle paper grain, CSS-only (no external texture images) */
+body::after{
+  content:"";
+  position:fixed; inset:0; z-index:-1; pointer-events:none;
+  opacity:.5;
+  background-image:
+    repeating-linear-gradient(0deg,   rgba(53,47,42,.014) 0 1px, transparent 1px 3px),
+    repeating-linear-gradient(90deg,  rgba(53,47,42,.012) 0 1px, transparent 1px 4px);
+}
+[data-theme="night"] body::after{
+  background-image:
+    repeating-linear-gradient(0deg,  rgba(255,255,255,.012) 0 1px, transparent 1px 3px),
+    repeating-linear-gradient(90deg, rgba(255,255,255,.010) 0 1px, transparent 1px 4px);
+}
+
+/* ==================================================================
+   4. FOCUS STATES  (§50)
+   ================================================================== */
+:focus{ outline:none; }
+:focus-visible{
+  outline:3px solid var(--ring);
+  outline-offset:3px;
+  border-radius:14px;
+}
+
+/* ==================================================================
+   5. ANIMATION KEYFRAMES  (§46)
+   ================================================================== */
+@keyframes bounce-gentle{ 0%,100%{transform:translateY(0)} 50%{transform:translateY(-4px)} }
+@keyframes float-soft{ 0%,100%{transform:translateY(0) rotate(0)} 50%{transform:translateY(-9px) rotate(2.5deg)} }
+@keyframes glow-soft{ 0%,100%{opacity:.55} 50%{opacity:.95} }
+@keyframes star-twinkle{ 0%,100%{opacity:.18; transform:scale(.85)} 50%{opacity:.85; transform:scale(1)} }
+@keyframes page-in{ from{opacity:0; transform:translateX(26px) rotateY(-5deg) scale(.985)} to{opacity:1; transform:none} }
+@keyframes page-out{ from{opacity:1; transform:none} to{opacity:0; transform:translateX(-26px) rotateY(5deg) scale(.985)} }
+@keyframes shimmer{ 0%{background-position:-460px 0} 100%{background-position:460px 0} }
+@keyframes confetti-fly{ to{ transform:translate(var(--cx),var(--cy)) rotate(var(--cr)) scale(.4); opacity:0; } }
+@keyframes cta-pulse{ 0%,100%{transform:scale(1)} 50%{transform:scale(1.025)} }
+
+.animate-bounce-gentle{ animation:bounce-gentle 2.6s ease-in-out infinite; }
+.animate-float-soft{ animation:float-soft 7.5s ease-in-out infinite; }
+.animate-glow-soft{ animation:glow-soft 4.2s ease-in-out infinite; }
+.animate-star-twinkle{ animation:star-twinkle 4s ease-in-out infinite; }
+.animate-page-in{ animation:page-in 300ms var(--ease) both; }
+.animate-page-out{ animation:page-out 190ms var(--ease) both; }
+
+/* ==================================================================
+   6. DECORATIVE BACKGROUND  (§45, §47)
+   ================================================================== */
+#bgDecor{ position:fixed; inset:0; z-index:0; pointer-events:none; overflow:hidden; }
+#bgDecor .blob{
+  position:absolute; border-radius:46% 54% 58% 42%/48% 44% 56% 52%;
+  filter:blur(28px); opacity:.34;
+}
+[data-theme="night"] #bgDecor .blob{ opacity:.20; }
+#bgDecor .cloud{
+  position:absolute; border-radius:999px;
+  background:rgba(255,255,255,.72); filter:blur(7px); opacity:.62;
+}
+[data-theme="night"] #bgDecor .cloud{ opacity:.06; }
+#bgDecor .star{
+  position:absolute; width:3px; height:3px; border-radius:50%;
+  background:#FFF6D9; box-shadow:0 0 6px 1px rgba(255,246,217,.75);
+  opacity:0; transition:opacity 500ms var(--ease);
+}
+[data-theme="night"] #bgDecor .star{ opacity:.6; }
+[data-theme="night"] #bgDecor .star.tw{ animation:star-twinkle 4s ease-in-out infinite; }
+#bgDecor .moon{
+  position:absolute; top:84px; right:6%;
+  width:70px; height:70px; border-radius:50%;
+  background:radial-gradient(circle at 34% 32%,#FFF3CF,#F3DFA0 62%,#E2C87E);
+  box-shadow:0 0 42px 12px rgba(255,238,190,.28);
+  opacity:0; transition:opacity 600ms var(--ease);
+}
+/* The glow animation must NOT run in day mode, or it would override
+   opacity:0 and leave a moon floating in the daytime sky. */
+[data-theme="night"] #bgDecor .moon{ opacity:.9; animation:glow-soft 4.2s ease-in-out infinite; }
+@media (max-width:640px){
+  #bgDecor .moon{ width:48px; height:48px; top:70px; }
+  #bgDecor .cloud{ transform:scale(.7); }   /* §42 reduce decoration on phones */
+}
+
+/* ==================================================================
+   7. HEADER  (§8, §40)
+   ================================================================== */
+#siteHeader{
+  position:sticky; top:0; z-index:50;
+  background:var(--header-bg);
+  backdrop-filter:blur(14px) saturate(1.3);
+  -webkit-backdrop-filter:blur(14px) saturate(1.3);
+  border-bottom:1px solid var(--hairline);
+  box-shadow:0 2px 14px -8px rgba(53,47,42,.28);
+  transition:padding 260ms var(--ease), box-shadow 260ms var(--ease);
+  padding-top:14px; padding-bottom:14px;
+}
+#siteHeader.compact{ padding-top:7px; padding-bottom:7px; box-shadow:0 4px 20px -10px rgba(53,47,42,.36); }
+#siteHeader.compact .header-sub{ opacity:0; max-height:0; margin:0; }
+.header-sub{ opacity:1; max-height:32px; transition:opacity 220ms var(--ease), max-height 260ms var(--ease); }
+.header-title{ font-size:clamp(1.15rem,3.6vw,1.6rem); font-weight:700; letter-spacing:.1px; line-height:1.45; }
+
+/* ==================================================================
+   8. PAPER CARD SURFACES  (§3, §4, §5)
+   ================================================================== */
+.paper{
+  position:relative;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.55), rgba(255,255,255,0) 40%),
+    linear-gradient(160deg, var(--surface) 0%, var(--surface) 62%, rgba(255,213,181,.16) 100%);
+  border:1px solid var(--hairline);
+  box-shadow:var(--card-shadow), var(--inner-hi);
+  border-radius:32px 26px 34px 24px;
+  transition:transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+[data-theme="night"] .paper{
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,0) 40%),
+    linear-gradient(160deg, var(--surface) 0%, #1D2740 70%, #232E4D 100%);
+}
+/* soft torn-paper edge, purely decorative */
+.paper::after{
+  content:""; position:absolute; left:16px; right:16px; bottom:-1px; height:6px;
+  pointer-events:none; opacity:.5;
+  background:radial-gradient(circle at 6px -2px, var(--hairline) 2px, transparent 2.5px) repeat-x;
+  background-size:12px 6px;
+}
+@media (hover:hover){
+  .story-card:hover{ transform:translateY(-4px); box-shadow:var(--card-shadow-hi), var(--inner-hi); }
+}
+/* organic radius variation, cycled by index */
+.story-card:nth-child(3n+1){ border-radius:34px 26px 32px 24px; }
+.story-card:nth-child(3n+2){ border-radius:24px 34px 26px 32px; }
+.story-card:nth-child(3n+3){ border-radius:30px 30px 22px 36px; }
+
+/* top decorative strip */
+.card-strip{
+  height:9px; width:100%;
+  border-radius:999px;
+  background:linear-gradient(90deg,var(--sky-deep),var(--sky),var(--story-yellow),var(--peach),var(--mint));
+  opacity:.9;
+}
+
+/* ==================================================================
+   9. BADGES  (§22)
+   ================================================================== */
+.badge-segment{
+  display:inline-flex; align-items:center; gap:6px;
+  padding:7px 15px; border-radius:999px;
+  background:linear-gradient(180deg,var(--sky),var(--sky-deep));
+  color:#0E3447; font-weight:700; font-size:.92rem;
+  box-shadow:0 2px 0 rgba(0,0,0,.05), var(--inner-hi);
+  transition:transform 220ms var(--ease);
+}
+[data-theme="night"] .badge-segment{ color:#04202F; }
+.badge-ref{
+  display:inline-flex; align-items:center;
+  padding:6px 13px; border-radius:999px;
+  background:transparent; border:1.5px dashed var(--hairline);
+  color:var(--text-2); font-size:.86rem; font-weight:600;
+}
+@media (hover:hover){ .story-card:hover .badge-segment{ transform:scale(1.04); } }
+
+/* ==================================================================
+   10. KIDS STORY SECTION  (§23, §24)
+   ================================================================== */
+.story-panel{
+  position:relative; overflow:hidden;
+  border-radius:26px 22px 28px 20px;
+  padding:20px 20px 22px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.62), rgba(255,255,255,0) 52%),
+    linear-gradient(155deg, rgba(169,221,245,.34), rgba(255,253,248,.92) 58%, rgba(189,236,203,.26));
+  box-shadow:var(--inner-hi), 0 1px 10px -6px rgba(53,47,42,.22);
+}
+[data-theme="night"] .story-panel{
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,0) 52%),
+    linear-gradient(155deg, rgba(43,58,99,.72), rgba(29,39,64,.95) 60%, rgba(49,81,63,.35));
+}
+.story-panel .corner{ position:absolute; font-size:15px; opacity:.4; pointer-events:none; }
+.story-panel .corner.tl{ top:9px; left:11px; }
+.story-panel .corner.br{ bottom:9px; right:11px; }
+.story-text{
+  font-size:clamp(18px,4.3vw,21px);
+  line-height:1.85;
+  font-weight:500;
+  text-align:left;
+  white-space:normal;
+  overflow-wrap:break-word;
+  word-break:normal;
+  color:var(--text);
+}
+@media (min-width:768px){ .story-text{ font-size:22px; line-height:1.85; } }
+
+/* ==================================================================
+   11. DRAWING CHALLENGE  (§25, §26)
+   ================================================================== */
+.draw-panel{
+  position:relative; overflow:hidden;
+  border-radius:24px 28px 20px 26px;
+  padding:18px 18px 20px;
+  border:2.5px dashed var(--amber);
+  background:linear-gradient(160deg, rgba(255,217,102,.26), rgba(255,213,181,.20) 70%, rgba(255,253,248,.7));
+  transition:box-shadow var(--dur) var(--ease);
+}
+[data-theme="night"] .draw-panel{
+  background:linear-gradient(160deg, rgba(216,166,75,.16), rgba(74,58,70,.34) 70%, rgba(25,33,58,.6));
+}
+@media (hover:hover){ .draw-panel:hover{ box-shadow:0 10px 26px -14px rgba(246,185,74,.7); } }
+.draw-text{ font-size:clamp(17px,4vw,19px); line-height:1.8; font-weight:600; color:var(--text); }
+/* CSS confetti flecks (§25) */
+.fleck{ position:absolute; pointer-events:none; opacity:.5; }
+.fleck.dot{ width:7px; height:7px; border-radius:50%; }
+.fleck.bar{ width:13px; height:5px; border-radius:3px; }
+
+.draw-cta{
+  display:inline-flex; align-items:center; justify-content:center; gap:8px;
+  min-height:52px; padding:13px 22px;
+  border:none; border-radius:999px; cursor:pointer;
+  font-family:inherit; font-size:1rem; font-weight:700; color:#4A3208;
+  background:linear-gradient(180deg,#FFE08A,var(--amber));
+  box-shadow:0 5px 0 rgba(198,141,42,.5), 0 12px 22px -12px rgba(246,185,74,.9), var(--inner-hi);
+  transition:transform 180ms var(--ease), box-shadow 180ms var(--ease);
+}
+@media (hover:hover){ .draw-cta:hover{ transform:translateY(-2px); animation:cta-pulse 1.5s ease-in-out infinite; } }
+.draw-cta:active{ transform:translateY(2px) scale(.97); box-shadow:0 2px 0 rgba(198,141,42,.5); animation:none; }
+
+.confetti-piece{
+  position:absolute; width:8px; height:8px; border-radius:2px;
+  pointer-events:none; z-index:5;
+  animation:confetti-fly 640ms var(--ease) forwards;
+}
+
+/* ==================================================================
+   12. VERSE ACCORDION  (§28, §29)
+   ================================================================== */
+.acc-btn{
+  width:100%; min-height:52px;
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+  padding:14px 18px; cursor:pointer;
+  font-family:inherit; font-size:.99rem; font-weight:600; text-align:left;
+  color:var(--text-2);
+  background:linear-gradient(180deg, rgba(255,255,255,.5), rgba(255,255,255,0));
+  border:1px solid var(--hairline); border-radius:20px;
+  transition:background 220ms var(--ease), color 220ms var(--ease);
+}
+[data-theme="night"] .acc-btn{ background:linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,0)); }
+@media (hover:hover){ .acc-btn:hover{ color:var(--text); background:rgba(169,221,245,.20); } }
+.acc-btn .chev{ transition:transform 260ms var(--ease); }
+.acc-btn[aria-expanded="true"] .chev{ transform:rotate(180deg); }
+
+.acc-panel{
+  max-height:0; opacity:0; overflow:hidden;
+  transition:max-height 320ms var(--ease), opacity 260ms var(--ease), margin-top 280ms var(--ease);
+  margin-top:0;
+}
+.acc-panel.open{ opacity:1; margin-top:12px; }
+.verse-paper{
+  border-radius:18px; padding:17px 19px;
+  background:linear-gradient(175deg,#FFFDF8,#FAF5EA);
+  border:1px solid var(--hairline);
+  box-shadow:0 2px 12px -8px rgba(53,47,42,.30), var(--inner-hi);
+}
+[data-theme="night"] .verse-paper{ background:linear-gradient(175deg,#1B2440,#161E35); }
+.verse-text{
+  font-family:"Noto Serif Telugu",serif;
+  font-size:clamp(17px,3.8vw,19px); line-height:1.86;
+  color:var(--text); text-align:left;
+}
+.verse-ref{ font-size:.85rem; font-weight:700; color:var(--text-2); letter-spacing:.3px; }
+.verse-missing{ font-size:1rem; line-height:1.8; color:var(--text-2); font-style:italic; }
+
+/* ==================================================================
+   13. CONTROLS  (§11, §12, §43)
+   ================================================================== */
+.select-shell{
+  position:relative; display:flex; align-items:center;
+  border-radius:999px; padding:4px 4px 4px 18px;
+  background:linear-gradient(180deg, rgba(255,255,255,.6), rgba(255,255,255,0)), var(--surface);
+  border:2px solid var(--peach);
+  box-shadow:0 4px 14px -8px rgba(53,47,42,.34), var(--inner-hi);
+}
+[data-theme="night"] .select-shell{ border-color:#3B4570; }
+.select-shell::after{
+  content:"▾"; position:absolute; right:19px; pointer-events:none;
+  font-size:1.05rem; color:var(--text-2);
+}
+#chapterSelector{
+  appearance:none; -webkit-appearance:none;
+  flex:1; min-height:52px; padding:10px 42px 10px 8px;
+  border:none; background:transparent; cursor:pointer;
+  font-family:inherit; font-size:1.02rem; font-weight:700; color:var(--text);
+}
+#chapterSelector:focus-visible{ outline:3px solid var(--ring); outline-offset:4px; border-radius:999px; }
+#chapterSelector option{ background:var(--surface); color:var(--text); }
+
+.nav-btn{
+  display:inline-flex; align-items:center; justify-content:center; gap:8px;
+  min-height:54px; padding:14px 20px;
+  border:none; border-radius:999px; cursor:pointer;
+  font-family:inherit; font-size:1rem; font-weight:700; color:#0E3447;
+  background:linear-gradient(180deg,#C8E9FA,var(--sky-deep));
+  box-shadow:0 5px 0 rgba(58,140,180,.42), 0 14px 26px -16px rgba(99,188,229,.95), var(--inner-hi);
+  transition:transform 180ms var(--ease), box-shadow 180ms var(--ease), opacity 180ms var(--ease);
+}
+[data-theme="night"] .nav-btn{ color:#06212F; }
+@media (hover:hover){ .nav-btn:not(:disabled):hover{ transform:translateY(-2px); } }
+.nav-btn:not(:disabled):active{ transform:translateY(2px) scale(.98); box-shadow:0 2px 0 rgba(58,140,180,.42); }
+.nav-btn:disabled{ opacity:.4; cursor:not-allowed; box-shadow:none; filter:saturate(.55); }
+
+.pill-btn{
+  display:inline-flex; align-items:center; justify-content:center; gap:7px;
+  min-height:48px; min-width:48px; padding:11px 17px;
+  border:1px solid var(--hairline); border-radius:999px; cursor:pointer;
+  font-family:inherit; font-size:.95rem; font-weight:700; color:var(--text);
+  background:var(--surface);
+  box-shadow:0 3px 12px -7px rgba(53,47,42,.42), var(--inner-hi);
+  transition:transform 180ms var(--ease);
+}
+@media (hover:hover){ .pill-btn:hover{ transform:translateY(-2px); } }
+.pill-btn:active{ transform:scale(.97); }
+
+/* ==================================================================
+   14. PROGRESS  (§14)
+   ================================================================== */
+.progress-track{
+  height:12px; border-radius:999px; overflow:hidden;
+  background:rgba(53,47,42,.09);
+  box-shadow:inset 0 1px 3px rgba(53,47,42,.16);
+}
+[data-theme="night"] .progress-track{ background:rgba(255,255,255,.10); }
+.progress-fill{
+  height:100%; width:0%; border-radius:999px;
+  background:linear-gradient(90deg,var(--sky-deep),#8FD6F0,var(--story-yellow));
+  box-shadow:0 0 10px rgba(255,217,102,.55);
+  transition:width 520ms var(--ease);
+}
+
+/* ==================================================================
+   15. MOBILE DOCK  (§13)
+   ================================================================== */
+#mobileDock{
+  position:fixed; left:50%; transform:translateX(-50%);
+  bottom:calc(16px + env(safe-area-inset-bottom));
+  z-index:45;
+  display:flex; align-items:center; gap:8px;
+  padding:8px; border-radius:999px;
+  background:var(--dock-bg);
+  backdrop-filter:blur(16px) saturate(1.4);
+  -webkit-backdrop-filter:blur(16px) saturate(1.4);
+  border:1px solid var(--hairline);
+  box-shadow:0 12px 34px -12px rgba(53,47,42,.48), var(--inner-hi);
+}
+@media (min-width:1024px){ #mobileDock{ display:none; } }
+.dock-btn{
+  width:52px; height:52px; border-radius:50%; border:none; cursor:pointer;
+  display:inline-flex; align-items:center; justify-content:center;
+  font-size:1.2rem; color:var(--text);
+  background:linear-gradient(180deg,#CFEAF8,var(--sky-deep));
+  box-shadow:0 3px 0 rgba(58,140,180,.40);
+  transition:transform 160ms var(--ease);
+}
+.dock-btn:active{ transform:scale(.94); }
+.dock-btn:disabled{ opacity:.35; cursor:not-allowed; box-shadow:none; filter:saturate(.5); }
+#dockLabel{
+  min-width:104px; padding:0 14px; text-align:center;
+  font-size:.92rem; font-weight:700; color:var(--text); white-space:nowrap;
+}
+
+/* ==================================================================
+   16. BACK TO TOP  (§34)
+   ================================================================== */
+#backToTop{
+  position:fixed; right:16px;
+  bottom:calc(84px + env(safe-area-inset-bottom));
+  z-index:46;
+  min-height:48px; padding:12px 17px;
+  border:1px solid var(--hairline); border-radius:999px; cursor:pointer;
+  font-family:inherit; font-size:.92rem; font-weight:700; color:var(--text);
+  background:var(--dock-bg);
+  backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+  box-shadow:0 10px 26px -12px rgba(53,47,42,.5), var(--inner-hi);
+  opacity:0; visibility:hidden; transform:translateY(12px);
+  transition:opacity 260ms var(--ease), transform 260ms var(--ease), visibility 260ms;
+}
+#backToTop.show{ opacity:1; visibility:visible; transform:translateY(0); }
+@media (min-width:1024px){ #backToTop{ bottom:24px; } }
+
+/* ==================================================================
+   17. SKELETONS  (§31)
+   ================================================================== */
+.skel{
+  border-radius:12px;
+  background:linear-gradient(90deg, rgba(53,47,42,.07) 25%, rgba(53,47,42,.13) 37%, rgba(53,47,42,.07) 63%);
+  background-size:920px 100%;
+  animation:shimmer 1.9s linear infinite;
+}
+[data-theme="night"] .skel{
+  background:linear-gradient(90deg, rgba(255,255,255,.06) 25%, rgba(255,255,255,.12) 37%, rgba(255,255,255,.06) 63%);
+  background-size:920px 100%;
+}
+
+/* ==================================================================
+   18. REDUCED MOTION  (§52)
+   ================================================================== */
+@media (prefers-reduced-motion:reduce){
+  html{ scroll-behavior:auto; }
+  *,*::before,*::after{
+    animation-duration:.001ms !important;
+    animation-iteration-count:1 !important;
+    transition-duration:.001ms !important;
+  }
+  .animate-bounce-gentle,.animate-float-soft,.animate-glow-soft,
+  .animate-star-twinkle,.animate-page-in,.animate-page-out,.skel{ animation:none !important; }
+  .acc-panel{ transition:none !important; }
+  @media (hover:hover){ .story-card:hover{ transform:none; } }
+}
+</style>
+</head>
+
+<body data-theme="day">
+
+<!-- ================= DECORATIVE BACKGROUND (§45) ================= -->
+<div id="bgDecor" aria-hidden="true"></div>
+
+<!-- ================= HEADER (§8) ================= -->
+<header id="siteHeader">
+  <div class="mx-auto w-full px-4 sm:px-6 lg:px-8" style="max-width:var(--read-max)">
+    <div class="flex items-center justify-between gap-3">
+      <div class="min-w-0">
+        <h1 class="header-title font-display flex items-center gap-2 m-0">
+          <span class="animate-bounce-gentle inline-block" aria-hidden="true">🎨</span>
+          <span class="truncate">బాలల ఆదికాండము కథలు</span>
+        </h1>
+        <p class="header-sub m-0 mt-1 text-[0.85rem] sm:text-[0.95rem]" style="color:var(--text-2)">
+          పిల్లల కోసం సులువైన దేవుని వాక్య కథలు
+        </p>
+      </div>
+      <button id="themeToggle" class="pill-btn shrink-0" type="button"
+              aria-label="పగలు లేదా రాత్రి రూపాన్ని మార్చండి">
+        <span id="themeIcon" aria-hidden="true">🌙</span>
+        <span id="themeLabel" class="hidden sm:inline">రాత్రి</span>
+      </button>
+    </div>
+  </div>
+</header>
+
+<main class="relative" style="z-index:1">
+  <div class="mx-auto w-full px-4 sm:px-6 lg:px-8" style="max-width:var(--read-max)">
+
+    <!-- ================= HERO (§9) ================= -->
+    <section class="paper relative mt-5 sm:mt-7 px-5 py-6 sm:px-8 sm:py-8 overflow-hidden"
+             aria-labelledby="heroTitle">
+      <span class="animate-float-soft absolute select-none" aria-hidden="true"
+            style="top:14px; right:22px; font-size:1.3rem; opacity:.65">⭐</span>
+      <span class="animate-float-soft absolute select-none" aria-hidden="true"
+            style="top:52px; right:64px; font-size:1.05rem; opacity:.5; animation-delay:1.4s">✨</span>
+      <span class="animate-float-soft absolute select-none hidden sm:block" aria-hidden="true"
+            style="bottom:20px; left:24px; font-size:1.25rem; opacity:.45; animation-delay:2.6s">🌈</span>
+      <span class="animate-float-soft absolute select-none hidden sm:block" aria-hidden="true"
+            style="top:26px; left:34%; font-size:1.15rem; opacity:.4; animation-delay:.8s">☁️</span>
+
+      <h2 id="heroTitle" class="font-display m-0 flex items-center gap-2"
+          style="font-size:clamp(1.6rem,4vw,2.6rem); font-weight:700; line-height:1.4">
+        <span aria-hidden="true">📖</span> ఆదికాండము
+      </h2>
+      <p class="m-0 mt-3" style="color:var(--text-2); font-size:clamp(15px,3.4vw,17px); line-height:1.8">
+        దేవుడు సృష్టించిన ప్రపంచం నుండి యోసేపు కథ వరకు మనం కలిసి తెలుసుకుందాం!
+      </p>
+
+      <div class="mt-6">
+        <div class="flex items-center justify-between gap-3 mb-2">
+          <span id="chapterCounter" class="font-display" style="font-weight:700; font-size:1.02rem">అధ్యాయం 1 / 50</span>
+          <span id="storyCount" style="color:var(--text-2); font-size:.9rem"></span>
+        </div>
+        <div class="progress-track" role="progressbar" aria-valuemin="1" aria-valuemax="50"
+             aria-valuenow="1" aria-label="చదువుతున్న అధ్యాయం పురోగతి" id="progressTrack">
+          <div class="progress-fill" id="progressFill"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= CHAPTER CONTROLS (§10, §11, §12) ================= -->
+    <nav class="paper mt-5 px-4 py-4 sm:px-6 sm:py-5" aria-label="అధ్యాయాల నావిగేషన్">
+      <label for="chapterSelector" class="block font-display mb-2"
+             style="font-weight:700; font-size:1rem">📖 అధ్యాయం ఎంచుకోండి</label>
+      <div class="select-shell">
+        <select id="chapterSelector" aria-describedby="chapterCounter"></select>
+      </div>
+
+      <div class="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <button id="prevBtn" class="nav-btn w-full" type="button">
+          <span aria-hidden="true">⬅️</span> మునుపటి అధ్యాయం
+        </button>
+        <button id="nextBtn" class="nav-btn w-full" type="button">
+          తర్వాతి అధ్యాయం <span aria-hidden="true">➡️</span>
+        </button>
+      </div>
+    </nav>
+
+    <!-- ================= STORY CANVAS (§20) ================= -->
+    <section id="chapterAnchor" class="scroll-mt-28" aria-label="ఈ అధ్యాయపు కథలు">
+      <div id="kidsBibleCanvas" class="mt-6" aria-live="polite" aria-busy="false"></div>
+    </section>
+
+    <!-- ================= FOOTER (§59) ================= -->
+    <footer class="paper mt-10 mb-6 px-5 py-6 sm:px-7 text-center">
+      <p class="font-display m-0" style="font-weight:700; font-size:1.05rem">📖 బాలల ఆదికాండము కథలు</p>
+      <p class="m-0 mt-2" style="color:var(--text-2); font-size:.92rem; line-height:1.8">
+        పిల్లలు దేవుని వాక్యాన్ని సులభంగా అర్థం చేసుకోవడానికి రూపొందించబడింది.
+      </p>
+      <div class="mt-4 grid gap-2 sm:grid-cols-2" style="color:var(--text-2); font-size:.86rem; line-height:1.75">
+        <p class="m-0">✨ సులువైన కథ — పిల్లల కోసం సరళమైన వివరణ</p>
+        <p class="m-0">📖 అసలు బైబిల్ వాక్యం — అందించిన వాక్య పాఠ్యం</p>
+      </div>
+    </footer>
+
+  </div>
+</main>
+
+<!-- ================= MOBILE DOCK (§13) ================= -->
+<nav id="mobileDock" aria-label="అధ్యాయాల త్వరిత నావిగేషన్">
+  <button id="dockPrev" class="dock-btn" type="button" aria-label="మునుపటి అధ్యాయం">⬅️</button>
+  <span id="dockLabel" aria-hidden="true">📖 అధ్యాయం 1</span>
+  <button id="dockNext" class="dock-btn" type="button" aria-label="తర్వాతి అధ్యాయం">➡️</button>
+</nav>
+
+<!-- ================= BACK TO TOP (§34) ================= -->
+<button id="backToTop" type="button" aria-label="పేజీ పైకి వెళ్లండి">⬆️ పైకి</button>
+
+<script>
+"use strict";
+/* ==================================================================
+   APPLICATION STATE  (§55)
+   ================================================================== */
+const DATA_URL    = "./bible-data/01-genesis.json";
+const TOTAL_CH    = 50;
+const LS_CHAPTER  = "kidsGenesisLastChapter";
+const LS_THEME    = "kidsGenesisTheme";
+
+const state = {
+  genesisData: [],
+  currentChapter: 1,
+  theme: "day",
+  loading: false,
+  transitioning: false
+};
+
+let accordionSeq = 0;   // guarantees unique accordion ids
+
+/* Small helpers ---------------------------------------------------- */
+const $ = (id) => document.getElementById(id);
+const prefersReducedMotion = () =>
+  window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/** Safe element factory: text always goes in via textContent (§53). */
+function el(tag, className, text){
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined && text !== null) node.textContent = String(text);
+  return node;
+}
+
+/* localStorage can throw in private mode — never let it break the app. */
+function lsGet(key){ try { return localStorage.getItem(key); } catch(e){ return null; } }
+function lsSet(key, val){ try { localStorage.setItem(key, val); } catch(e){ /* ignore */ } }
+
+/* ==================================================================
+   THEME  (§2, §39)
+   ================================================================== */
+function applyTheme(theme){
+  state.theme = (theme === "night") ? "night" : "day";
+  document.body.setAttribute("data-theme", state.theme);
+  document.documentElement.setAttribute("data-theme", state.theme);
+
+  const isNight = state.theme === "night";
+  $("themeIcon").textContent  = isNight ? "☀️" : "🌙";
+  $("themeLabel").textContent = isNight ? "పగలు" : "రాత్రి";
+  $("themeToggle").setAttribute(
+    "aria-label", isNight ? "పగలు రూపానికి మార్చండి" : "రాత్రి రూపానికి మార్చండి"
+  );
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute("content", isNight ? "#12172A" : "#FDFBF7");
+}
+
+function toggleTheme(){
+  const next = (state.theme === "night") ? "day" : "night";
+  applyTheme(next);
+  lsSet(LS_THEME, next);
+}
+
+function resolveInitialTheme(){
+  const saved = lsGet(LS_THEME);
+  if (saved === "day" || saved === "night") return saved;
+  if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) return "night";
+  return "day";
+}
+
+/* ==================================================================
+   DECORATIVE BACKGROUND  (§45, §47)
+   ================================================================== */
+function buildBackgroundDecor(){
+  const host = $("bgDecor");
+  const frag = document.createDocumentFragment();
+
+  const blobs = [
+    { t:"8%",  l:"-6%",  w:250, h:230, c:"var(--sky)" },
+    { t:"32%", l:"86%",  w:210, h:220, c:"var(--peach)" },
+    { t:"64%", l:"-8%",  w:240, h:210, c:"var(--mint)" },
+    { t:"84%", l:"78%",  w:220, h:230, c:"var(--lavender)" }
+  ];
+  blobs.forEach(b => {
+    const d = el("div","blob");
+    d.style.top = b.t; d.style.left = b.l;
+    d.style.width = b.w+"px"; d.style.height = b.h+"px";
+    d.style.background = b.c;
+    frag.appendChild(d);
+  });
+
+  const clouds = [
+    { t:"12%", l:"14%", w:110, h:34 },
+    { t:"40%", l:"72%", w:130, h:38 },
+    { t:"70%", l:"22%", w:96,  h:30 }
+  ];
+  clouds.forEach(c => {
+    const d = el("div","cloud");
+    d.style.top = c.t; d.style.left = c.l;
+    d.style.width = c.w+"px"; d.style.height = c.h+"px";
+    frag.appendChild(d);
+  });
+
+  // CSS-generated stars for night mode — no external images.
+  for (let i = 0; i < 64; i++){
+    const s = el("div","star" + (i % 3 === 0 ? " tw" : ""));
+    s.style.top  = (Math.random()*100).toFixed(2)+"%";
+    s.style.left = (Math.random()*100).toFixed(2)+"%";
+    s.style.animationDelay = (Math.random()*4).toFixed(2)+"s";
+    const size = (Math.random() < 0.25) ? 4 : 2.5;
+    s.style.width = size+"px"; s.style.height = size+"px";
+    frag.appendChild(s);
+  }
+
+  frag.appendChild(el("div","moon"));
+  host.appendChild(frag);
+}
+
+/* ==================================================================
+   DATA LOADING  (§16, §18)
+   ================================================================== */
+async function loadGenesisData(){
+  state.loading = true;
+  showLoadingState();
+  try{
+    const res = await fetch(DATA_URL, { cache: "no-cache" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const raw = await res.json();
+    state.genesisData = validateGenesisData(raw);
+    state.loading = false;
+    loadChapter(resolveInitialChapter(), { animate:false, scroll:false });
+  } catch (err){
+    // Developer diagnostics only — children never see technical text (§32).
+    console.error("[kids-genesis] failed to load dataset:", err);
+    state.loading = false;
+    showErrorState();
+  }
+}
+
+/**
+ * Keeps only well-formed records. Malformed entries are skipped with a
+ * console.warn rather than crashing the interface (§18).
+ */
+function validateGenesisData(raw){
+  if (!Array.isArray(raw)){
+    console.warn("[kids-genesis] dataset root is not an array; ignoring.");
+    return [];
+  }
+  const clean = [];
+  raw.forEach((item, idx) => {
+    if (!item || typeof item !== "object"){
+      console.warn("[kids-genesis] record", idx, "is not an object; skipped.");
+      return;
+    }
+    const ch = Number(item.chapterIndex);
+    const vs = Number(item.verseIndex);
+    if (!Number.isFinite(ch) || !Number.isInteger(ch) || ch < 1 || ch > TOTAL_CH){
+      console.warn("[kids-genesis] record", idx, "has invalid chapterIndex:", item.chapterIndex);
+      return;
+    }
+    if (!Number.isFinite(vs) || !Number.isInteger(vs) || vs < 1){
+      console.warn("[kids-genesis] record", idx, "has invalid verseIndex:", item.verseIndex);
+      return;
+    }
+    clean.push({
+      chapterIndex: ch,
+      verseIndex: vs,
+      rawTeluguText:     typeof item.rawTeluguText     === "string" ? item.rawTeluguText     : "",
+      kidsTeluguSummary: typeof item.kidsTeluguSummary === "string" ? item.kidsTeluguSummary : "",
+      drawingPrompt:     typeof item.drawingPrompt     === "string" ? item.drawingPrompt     : ""
+    });
+  });
+  console.info("[kids-genesis] loaded", clean.length, "valid records of", raw.length);
+  return clean;
+}
+
+/** Returns a sorted COPY so the cached dataset is never mutated (§19). */
+function getChapterRecords(chapter){
+  return state.genesisData
+    .filter(item => Number(item.chapterIndex) === Number(chapter))
+    .slice()
+    .sort((a,b) => a.verseIndex - b.verseIndex);
+}
+
+/* ==================================================================
+   CHAPTER SELECTOR  (§10)
+   ================================================================== */
+function populateChapterSelector(){
+  const sel = $("chapterSelector");
+  const frag = document.createDocumentFragment();
+  for (let i = 1; i <= TOTAL_CH; i++){
+    const opt = document.createElement("option");
+    opt.value = String(i);
+    opt.textContent = "అధ్యాయం " + i;
+    frag.appendChild(opt);
+  }
+  sel.appendChild(frag);
+}
+
+function updateChapterSelector(){
+  $("chapterSelector").value = String(state.currentChapter);
+}
+
+/* ==================================================================
+   INITIAL CHAPTER RESOLUTION  (§37, §38)
+   Priority: valid URL hash → saved localStorage → 1
+   ================================================================== */
+function parseHashChapter(){
+  const m = /^#chapter-(\d{1,2})$/.exec(window.location.hash || "");
+  if (!m) return null;
+  const n = Number(m[1]);
+  return (Number.isInteger(n) && n >= 1 && n <= TOTAL_CH) ? n : null;
+}
+
+function resolveInitialChapter(){
+  const fromHash = parseHashChapter();
+  if (fromHash) return fromHash;
+
+  const saved = Number(lsGet(LS_CHAPTER));
+  if (Number.isInteger(saved) && saved >= 1 && saved <= TOTAL_CH) return saved;
+
+  return 1;
+}
+
+function updateHash(){
+  const target = "#chapter-" + state.currentChapter;
+  if (window.location.hash !== target){
+    history.replaceState(null, "", target);
+  }
+}
+
+function saveLastChapter(){
+  lsSet(LS_CHAPTER, String(state.currentChapter));
+}
+
+/* ==================================================================
+   NAVIGATION / PROGRESS  (§12, §14, §15)
+   ================================================================== */
+function updateNavigationButtons(){
+  const atFirst = state.currentChapter <= 1;
+  const atLast  = state.currentChapter >= TOTAL_CH;
+  const busy    = state.transitioning;
+
+  $("prevBtn").disabled  = atFirst || busy;
+  $("nextBtn").disabled  = atLast  || busy;
+  $("dockPrev").disabled = atFirst || busy;
+  $("dockNext").disabled = atLast  || busy;
+  $("chapterSelector").disabled = busy;
+}
+
+function updateProgress(){
+  const pct = (state.currentChapter / TOTAL_CH) * 100;
+  $("progressFill").style.width = pct.toFixed(2) + "%";
+  $("chapterCounter").textContent = "అధ్యాయం " + state.currentChapter + " / " + TOTAL_CH;
+  $("progressTrack").setAttribute("aria-valuenow", String(state.currentChapter));
+  $("dockLabel").textContent = "📖 అధ్యాయం " + state.currentChapter;
+}
+
+function updateStoryCount(count){
+  $("storyCount").textContent = "ఈ అధ్యాయంలో కథ భాగాలు: " + count;
+}
+
+/* ==================================================================
+   STORY CARD BUILDERS  (§21 – §29)
+   ================================================================== */
+function createStorySection(record){
+  const wrap = el("div","story-panel mt-4");
+
+  const tl = el("span","corner tl","✨"); tl.setAttribute("aria-hidden","true");
+  const br = el("span","corner br","☁️"); br.setAttribute("aria-hidden","true");
+  wrap.appendChild(tl);
+  wrap.appendChild(br);
+
+  const head = el("h3","font-display m-0 mb-3 flex items-center gap-2");
+  head.style.fontSize = "1.15rem";
+  head.style.fontWeight = "700";
+  head.appendChild(el("span", null, "✨ సులువైన కథ"));
+  wrap.appendChild(head);
+
+  // Never truncated, never behind "read more" (§24).
+  const body = el("p","story-text m-0", record.kidsTeluguSummary);
+  wrap.appendChild(body);
+
+  return wrap;
+}
+
+function createDrawingChallenge(record){
+  const wrap = el("div","draw-panel mt-4");
+
+  // CSS confetti flecks — decorative only.
+  const flecks = [
+    { cls:"dot", top:"10px",  left:"14px",  bg:"var(--sky-deep)" },
+    { cls:"bar", top:"18px",  right:"20px", bg:"var(--mint)", rot:"24deg" },
+    { cls:"dot", bottom:"14px", left:"26px", bg:"var(--lavender)" },
+    { cls:"bar", bottom:"20px", right:"34px", bg:"var(--sky)", rot:"-18deg" }
+  ];
+  flecks.forEach(f => {
+    const d = el("div","fleck " + f.cls);
+    if (f.top)    d.style.top = f.top;
+    if (f.left)   d.style.left = f.left;
+    if (f.right)  d.style.right = f.right;
+    if (f.bottom) d.style.bottom = f.bottom;
+    d.style.background = f.bg;
+    if (f.rot) d.style.transform = "rotate(" + f.rot + ")";
+    d.setAttribute("aria-hidden","true");
+    wrap.appendChild(d);
+  });
+
+  const head = el("h3","font-display m-0 mb-2 flex items-center gap-2");
+  head.style.fontSize = "1.12rem";
+  head.style.fontWeight = "700";
+  head.appendChild(el("span", null, "🎨 చిత్రలేఖన సవాలు"));
+  wrap.appendChild(head);
+
+  wrap.appendChild(el("p","draw-text m-0", record.drawingPrompt));
+
+  const cta = el("button","draw-cta mt-4","🖍️ రంగుల పెన్సిల్స్ తీసుకొని గీయండి!");
+  cta.type = "button";
+  cta.dataset.action = "draw-cta";   // handled by delegation (§56)
+  wrap.appendChild(cta);
+
+  return wrap;
+}
+
+function createVerseAccordion(record){
+  accordionSeq += 1;
+  const panelId = "versePanel-" + accordionSeq;
+  const btnId   = "verseBtn-"   + accordionSeq;
+
+  const wrap = el("div","mt-4");
+
+  const btn = el("button","acc-btn");
+  btn.type = "button";
+  btn.id = btnId;
+  btn.setAttribute("aria-expanded","false");
+  btn.setAttribute("aria-controls", panelId);
+  btn.dataset.action = "accordion";
+  btn.appendChild(el("span","acc-label","🔍 అసలు బైబిల్ వాక్యం చూడండి"));
+  const chev = el("span","chev","▾");
+  chev.setAttribute("aria-hidden","true");
+  btn.appendChild(chev);
+  wrap.appendChild(btn);
+
+  const panel = el("div","acc-panel");
+  panel.id = panelId;
+  panel.setAttribute("role","region");
+  panel.setAttribute("aria-labelledby", btnId);
+
+  const paper = el("div","verse-paper");
+  paper.appendChild(
+    el("p","verse-ref m-0 mb-2","ఆదికాండము " + record.chapterIndex + ":" + record.verseIndex)
+  );
+
+  // SCRIPTURE INTEGRITY (§30, §60): verse text is rendered only when the
+  // dataset supplies it. Nothing is generated, translated or substituted.
+  const verse = (record.rawTeluguText || "").trim();
+  if (verse){
+    paper.appendChild(el("p","verse-text m-0", verse));
+  } else {
+    paper.appendChild(el("p","verse-missing m-0","అసలు బైబిల్ వాక్యం ప్రస్తుతం అందుబాటులో లేదు."));
+  }
+
+  panel.appendChild(paper);
+  wrap.appendChild(panel);
+  return wrap;
+}
+
+function createStoryCard(record){
+  const card = el("article","story-card paper px-4 py-5 sm:px-7 sm:py-7");
+
+  const strip = el("div","card-strip");
+  strip.setAttribute("aria-hidden","true");
+  card.appendChild(strip);
+
+  const badges = el("div","flex flex-wrap items-center gap-2 mt-4");
+  badges.appendChild(el("span","badge-segment","📖 భాగం " + record.verseIndex));
+  badges.appendChild(el("span","badge-ref","ఆదికాండము " + record.chapterIndex + ":" + record.verseIndex));
+  card.appendChild(badges);
+
+  card.appendChild(createStorySection(record));
+  card.appendChild(createDrawingChallenge(record));
+  card.appendChild(createVerseAccordion(record));
+
+  return card;
+}
+
+/* ==================================================================
+   RENDER STATES  (§31, §32, §33)
+   ================================================================== */
+function clearCanvas(){
+  const canvas = $("kidsBibleCanvas");
+  while (canvas.firstChild) canvas.removeChild(canvas.firstChild);
+  return canvas;
+}
+
+function showLoadingState(){
+  const canvas = clearCanvas();
+  canvas.setAttribute("aria-busy","true");
+
+  const head = el("div","paper px-5 py-6 text-center");
+  const icon = el("div","animate-bounce-gentle","📖");
+  icon.style.fontSize = "2.2rem";
+  icon.setAttribute("aria-hidden","true");
+  head.appendChild(icon);
+  head.appendChild(el("p","font-display m-0 mt-2","కథల పుటలు తెరుస్తున్నాం..."));
+  canvas.appendChild(head);
+
+  // 3 skeleton cards mimicking title / story / drawing panel
+  for (let i = 0; i < 3; i++){
+    const sk = el("article","paper px-5 py-6 mt-5");
+    const t = el("div","skel"); t.style.height = "26px"; t.style.width = "44%";
+    sk.appendChild(t);
+
+    const s = el("div","skel mt-5"); s.style.height = "104px"; s.style.borderRadius = "22px";
+    sk.appendChild(s);
+
+    const d = el("div","skel mt-4"); d.style.height = "78px"; d.style.borderRadius = "20px";
+    sk.appendChild(d);
+
+    canvas.appendChild(sk);
+  }
+}
+
+function showErrorState(){
+  const canvas = clearCanvas();
+  canvas.setAttribute("aria-busy","false");
+
+  const box = el("article","paper px-5 py-8 sm:px-8 text-center");
+  const art = el("div","animate-float-soft","🎨");
+  art.style.fontSize = "2.6rem";
+  art.setAttribute("aria-hidden","true");
+  box.appendChild(art);
+
+  const h = el("h3","font-display m-0 mt-3","కథలు ఇంకా సిద్ధమవుతున్నాయి!");
+  h.style.fontSize = "1.25rem"; h.style.fontWeight = "700";
+  box.appendChild(h);
+
+  const p1 = el("p","m-0 mt-3","ఆదికాండము కథల ఫైల్ ప్రస్తుతం అందుబాటులో లేదు.");
+  p1.style.color = "var(--text-2)"; p1.style.lineHeight = "1.8";
+  box.appendChild(p1);
+
+  const p2 = el("p","m-0 mt-1","దయచేసి కొద్దిసేపటి తర్వాత మళ్లీ ప్రయత్నించండి.");
+  p2.style.color = "var(--text-2)"; p2.style.lineHeight = "1.8";
+  box.appendChild(p2);
+
+  const retry = el("button","nav-btn mt-6","🔄 మళ్లీ ప్రయత్నించండి");
+  retry.type = "button";
+  retry.addEventListener("click", () => { loadGenesisData(); });   // real refetch (§32)
+  box.appendChild(retry);
+
+  canvas.appendChild(box);
+}
+
+function showEmptyState(){
+  const canvas = $("kidsBibleCanvas");
+
+  const box = el("article","paper px-5 py-8 sm:px-8 text-center");
+  const icon = el("div","animate-float-soft","📖");
+  icon.style.fontSize = "2.4rem";
+  icon.setAttribute("aria-hidden","true");
+  box.appendChild(icon);
+
+  const p1 = el("p","font-display m-0 mt-3","ఈ అధ్యాయం కథలు ఇంకా సిద్ధం కాలేదు.");
+  p1.style.fontSize = "1.12rem"; p1.style.fontWeight = "700";
+  box.appendChild(p1);
+
+  const p2 = el("p","m-0 mt-2","త్వరలో ఇక్కడ కొత్త కథలు వస్తాయి! 🎨");
+  p2.style.color = "var(--text-2)"; p2.style.lineHeight = "1.8";
+  box.appendChild(p2);
+
+  const row = el("div","mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3");
+  if (state.currentChapter > 1){
+    const p = el("button","nav-btn w-full","⬅️ మునుపటి అధ్యాయం");
+    p.type = "button";
+    p.addEventListener("click", () => loadChapter(state.currentChapter - 1));
+    row.appendChild(p);
+  }
+  if (state.currentChapter < TOTAL_CH){
+    const n = el("button","nav-btn w-full","తర్వాతి అధ్యాయం ➡️");
+    n.type = "button";
+    n.addEventListener("click", () => loadChapter(state.currentChapter + 1));
+    row.appendChild(n);
+  }
+  box.appendChild(row);
+
+  canvas.appendChild(box);
+}
+
+/* ==================================================================
+   RENDER CHAPTER  (§19, §20, §57)
+   ================================================================== */
+function renderChapter(chapter){
+  const canvas = clearCanvas();
+  canvas.setAttribute("aria-busy","false");
+
+  const records = getChapterRecords(chapter);
+  updateStoryCount(records.length);
+
+  if (records.length === 0){
+    showEmptyState();
+    return;
+  }
+
+  // DocumentFragment keeps this to a single layout pass (§57).
+  const frag = document.createDocumentFragment();
+  records.forEach(rec => frag.appendChild(createStoryCard(rec)));
+
+  const list = el("div","grid gap-6 sm:gap-8");
+  list.appendChild(frag);
+  canvas.appendChild(list);
+}
+
+/* ==================================================================
+   PAGE TRANSITION  (§6, §36)
+   ================================================================== */
+function performPageTransition(chapter, opts){
+  const options = opts || {};
+  const canvas  = $("kidsBibleCanvas");
+  const reduced = prefersReducedMotion();
+
+  const finish = () => {
+    renderChapter(chapter);
+    if (!reduced && options.animate !== false){
+      canvas.classList.remove("animate-page-out");
+      canvas.classList.add("animate-page-in");
+      setTimeout(() => canvas.classList.remove("animate-page-in"), 320);
+    }
+    if (options.scroll !== false) scrollToChapterStart();
+    state.transitioning = false;
+    updateNavigationButtons();
+  };
+
+  if (reduced || options.animate === false){
+    finish();
+    return;
+  }
+
+  canvas.classList.add("animate-page-out");
+  setTimeout(finish, 190);   // out 190ms + in 300ms ≈ 300–450ms felt duration
+}
+
+function scrollToChapterStart(){
+  const anchor = $("chapterAnchor");
+  if (!anchor) return;
+  const headerH = $("siteHeader").offsetHeight || 0;
+  const y = anchor.getBoundingClientRect().top + window.pageYOffset - headerH - 12;
+  window.scrollTo({ top: Math.max(0, y), behavior: prefersReducedMotion() ? "auto" : "smooth" });
+}
+
+/* ==================================================================
+   LOAD CHAPTER (main orchestrator)
+   ================================================================== */
+function loadChapter(chapter, opts){
+  const n = Number(chapter);
+  if (!Number.isInteger(n) || n < 1 || n > TOTAL_CH) return;
+  if (state.transitioning) return;
+
+  state.transitioning = true;
+  state.currentChapter = n;
+
+  updateChapterSelector();
+  updateNavigationButtons();
+  updateProgress();
+  updateHash();
+  saveLastChapter();
+
+  performPageTransition(n, opts);
+}
+
+/* ==================================================================
+   MICRO-INTERACTION: CONFETTI  (§27)
+   ================================================================== */
+function triggerMiniConfetti(button){
+  if (prefersReducedMotion()) return;
+
+  const host = button.parentElement;
+  if (!host) return;
+  if (getComputedStyle(host).position === "static") host.style.position = "relative";
+
+  const colors = ["#63BCE5","#FFD966","#BDECCB","#DDD3FF","#FFD5B5","#F6B94A"];
+  const count  = 8;
+
+  const bRect = button.getBoundingClientRect();
+  const hRect = host.getBoundingClientRect();
+  const originX = bRect.left - hRect.left + bRect.width / 2;
+  const originY = bRect.top  - hRect.top  + bRect.height / 2;
+
+  for (let i = 0; i < count; i++){
+    const piece = el("div","confetti-piece");
+    const angle = (Math.PI * 2 * i) / count + (Math.random() * 0.5 - 0.25);
+    const dist  = 42 + Math.random() * 34;
+
+    piece.style.left = originX + "px";
+    piece.style.top  = originY + "px";
+    piece.style.background = colors[i % colors.length];
+    piece.style.setProperty("--cx", (Math.cos(angle) * dist).toFixed(1) + "px");
+    piece.style.setProperty("--cy", (Math.sin(angle) * dist).toFixed(1) + "px");
+    piece.style.setProperty("--cr", (Math.random() * 420 - 210).toFixed(0) + "deg");
+    if (i % 2 === 0) piece.style.borderRadius = "50%";
+
+    host.appendChild(piece);
+    // Particles remove themselves from the DOM.
+    setTimeout(() => { if (piece.parentElement) piece.parentElement.removeChild(piece); }, 700);
+  }
+}
+
+/* ==================================================================
+   ACCORDION TOGGLE  (§28, §29)
+   ================================================================== */
+function toggleAccordion(btn){
+  const panelId = btn.getAttribute("aria-controls");
+  const panel = document.getElementById(panelId);
+  if (!panel) return;
+
+  const isOpen = btn.getAttribute("aria-expanded") === "true";
+  const label  = btn.querySelector(".acc-label");
+
+  if (isOpen){
+    panel.style.maxHeight = "0px";
+    panel.classList.remove("open");
+    btn.setAttribute("aria-expanded","false");
+    if (label) label.textContent = "🔍 అసలు బైబిల్ వాక్యం చూడండి";
+  } else {
+    panel.classList.add("open");
+    // scrollHeight, not a brittle fixed height (§29)
+    panel.style.maxHeight = panel.scrollHeight + "px";
+    btn.setAttribute("aria-expanded","true");
+    if (label) label.textContent = "🔼 అసలు వాక్యాన్ని మూసివేయండి";
+  }
+}
+
+/* ==================================================================
+   BACK TO TOP + HEADER SCROLL  (§34, §40)
+   ================================================================== */
+function handleBackToTop(){
+  window.scrollTo({ top: 0, behavior: prefersReducedMotion() ? "auto" : "smooth" });
+}
+
+function onScroll(){
+  const y = window.pageYOffset || document.documentElement.scrollTop;
+  $("siteHeader").classList.toggle("compact", y > 40);
+  $("backToTop").classList.toggle("show", y > 500);
+}
+
+/* ==================================================================
+   EVENT WIRING  (§56)
+   One listener per control; card interactions use delegation so
+   re-rendering never stacks duplicate listeners.
+   ================================================================== */
+function bindEvents(){
+  $("chapterSelector").addEventListener("change", (e) => {
+    loadChapter(Number(e.target.value));
+  });
+
+  $("prevBtn").addEventListener("click", () => loadChapter(state.currentChapter - 1));
+  $("nextBtn").addEventListener("click", () => loadChapter(state.currentChapter + 1));
+  $("dockPrev").addEventListener("click", () => loadChapter(state.currentChapter - 1));
+  $("dockNext").addEventListener("click", () => loadChapter(state.currentChapter + 1));
+
+  $("themeToggle").addEventListener("click", toggleTheme);
+  $("backToTop").addEventListener("click", handleBackToTop);
+
+  // Delegated card interactions.
+  $("kidsBibleCanvas").addEventListener("click", (e) => {
+    const accBtn = e.target.closest('[data-action="accordion"]');
+    if (accBtn){ toggleAccordion(accBtn); return; }
+
+    const ctaBtn = e.target.closest('[data-action="draw-cta"]');
+    if (ctaBtn){ triggerMiniConfetti(ctaBtn); return; }
+  });
+
+  window.addEventListener("scroll", onScroll, { passive:true });
+
+  // Back/forward navigation between #chapter-N entries.
+  window.addEventListener("hashchange", () => {
+    const n = parseHashChapter();
+    if (n && n !== state.currentChapter) loadChapter(n);
+  });
+
+  // Keep open accordions correctly sized after a resize.
+  window.addEventListener("resize", () => {
+    document.querySelectorAll('.acc-btn[aria-expanded="true"]').forEach(btn => {
+      const panel = document.getElementById(btn.getAttribute("aria-controls"));
+      if (panel) panel.style.maxHeight = panel.scrollHeight + "px";
+    });
+  }, { passive:true });
+}
+
+/* ==================================================================
+   INIT
+   ================================================================== */
+function initializeApp(){
+  applyTheme(resolveInitialTheme());
+  buildBackgroundDecor();
+  populateChapterSelector();
+  bindEvents();
+  onScroll();
+  loadGenesisData();
+}
+
+document.addEventListener("DOMContentLoaded", initializeApp);
+</script>
+</body>
+</html>
